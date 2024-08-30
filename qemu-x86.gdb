@@ -1,0 +1,1 @@
+target remote | qemu-system-i386 -S -gdb stdio -drive format=raw,file=build/x86.img
