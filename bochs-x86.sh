@@ -1,1 +1,1 @@
-bochs -f bochs_config_x86
+bochs -q -f bochs_config_x86

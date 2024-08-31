@@ -1,1 +1,1 @@
-sudo apt install git mtools nasm make gdb qemu-system-x86 bochs bochs-sdl bochsbios vgabios alsa-utils alsa-oss libasound2-plugins
+sudo apt install git mtools nasm make gdb qemu-system-x86 bochs bochs-sdl bochsbios vgabios alsa-utils alsa-oss libasound2-plugins 
