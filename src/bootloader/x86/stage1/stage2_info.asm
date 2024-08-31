@@ -1,0 +1,1 @@
+STAGE2_LOAD_SEGMENT     equ 0x1000
