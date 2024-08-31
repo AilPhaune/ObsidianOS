@@ -12,3 +12,4 @@ $(BUILD_DIR)/x86/bootloader_stage2.bin: stage2.asm
 
 clean:
 	rm -f $(BUILD_DIR)/x86/bootloader_stage2.bin
+	$(CARGO) clean
