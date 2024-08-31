@@ -24,6 +24,7 @@ floppy-x86: bootloader kernel
 	mkfs.fat -F 12 -n "AilphauneOS" $(BUILD_DIR)/x86.img
 	dd if=$(BUILD_DIR)/x86/bootloader.bin of=$(BUILD_DIR)/x86.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/x86.img $(BUILD_DIR)/x86/bootloader_stage2.bin "::stage2.bin"
+	mcopy -i $(BUILD_DIR)/x86.img $(BUILD_DIR)/x86/bootloader_stage3.bin "::stage3.bin"
 
 # Clean up generated files
 clean:
