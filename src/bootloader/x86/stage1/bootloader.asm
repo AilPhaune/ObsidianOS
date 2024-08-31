@@ -1,202 +1,209 @@
 BITS 16
-ORG 0x7c00
-
-; FAT Headers
-bpb_start:
-    jmp short start
-    nop
-
-bpb_oem:                     db "MSWIN4.1"
-bpb_bytes_per_sector:        dw 512
-bpb_sectors_per_cluster:     db 1
-bpb_reserved_sectors:        dw 1
-bpb_fat_count:               db 2
-bpb_root_directory_entries:  dw 0xE0
-bpb_total_sector_count:      dw 2880
-bpb_media_descriptor:        db 0xF0
-bpb_sectors_per_fat:         dw 9
-bpb_sectors_per_track:       dw 18
-bpb_head_count:              dw 2
-bpb_hidden_sector_count:     dd 0
-bpb_large_sector_count:      dd 0
-
-; Extended boot record
-ebr_drive_number:            db 0 ; Will be set from the value of register dl
-ebr_reserved:                db 0
-ebr_signature:               db 0x29
-ebr_volume_id_serial:        db 0x31, 0x41, 0x59, 0x26
-ebr_volume_label:            db "AilphauneOS" ; 11 bytes
-ebr_system_identifier:       db "FAT12   " ; 8 bytes
+ORG 0
 
 start:
     cli
     ; Setup segment registers
-    xor ax, ax
+    mov ax, 0x07c0
     mov ds, ax
     mov es, ax
+    mov gs, ax
 
     ; Setup stack
+    xor ax, ax
     mov ss, ax
-    mov sp, 0x7c00
+    mov sp, 0x7a00
+    sti
 
-    ; Some BIOSes might load the bootloader at 07C0:0000 instead of 0000:7C00
-    push es
-    push word .after
-    retf
+    ; Most BIOSes load us into 0x0000:0x7c00, but we need the ORG to be 0, so there won't be problems when we'll relocate to 0x7a00.
+    jmp 0x07c0:.bootloader
+
+.bootloader:
+    mov [boot_drive], dl
+
+    cmp ecx, ASCII_OBSI
+    jne .not_loaded_by_obsidian
+    cmp edx, ASCII_DIAN
+    jne .not_loaded_by_obsidian
+
+.loaded_by_obsidian:
+    mov si, msg_obsi
+    call puts
+    jmp $
+
+.not_loaded_by_obsidian:
+    ; Copy bootloader at 0x7a00
+    cli
+    mov ax, 0x7a0
+    mov fs, ax                          ; Destination segment
+    mov si, 0                           ; Source index: 0x07c0:0x0000
+    mov di, 0                           ; Destination index: 0x7a0:0x0000
+    mov bx, 512                         ; Number of bytes to copy
+.copy_loop:
+    mov al, [ds:si]                     ; Load byte
+    mov [fs:di], al                     ; Store byte
+    inc si                              ; Next source byte
+    inc di                              ; Next destination byte
+    dec bx                              ; Decrement counter
+    test bx, bx                         ; Test counter
+    jnz .copy_loop                      ; Continue until all bytes copied
+
+    ; Jump to the copied bootloader
+    jmp 0x07a0:.after
+
 .after:
-
-    ; Save disk number
-    mov [ebr_drive_number], dl
-
-    ; Get drive parameters: Sectors per track and head count from the disk might not be reliable, so we ask the BIOS
-    push es
-    mov ah, 0x08
-    stc
-    int 0x13
-    jc bootloader_error
-    pop es
-
-    and cl, 0x3F                            ; Get rid of the top 2 bits
-    xor ch, ch
-    mov [bpb_sectors_per_track], cx         ; Sector count
-
-    inc dh
-    mov [bpb_head_count], dh                ; Head count
-
-    ; Read FAT 12 root directory
-    ; Start by computing the LBA: lba = reserved + fat_count*sectors_per_fat
-    mov ax, [bpb_sectors_per_fat]           ; ax = sectors_per_fat
-    mov bl, [bpb_fat_count]         
-    xor bh, bh                              ; bx = fat_count
-    mul bx                                  ; ax = sectors_per_fat*fat_count
-    add ax, [bpb_reserved_sectors]          ; ax = LBA
-    push ax
-    ; Calculate size of root directory: entry_size * number_of_entries / bytes_per_sector ---- entry_size=32
-    mov ax, [bpb_root_directory_entries]
-    shl ax, 5                               ; ax = 32*bpb_sectors_per_fat
-    xor dx, dx                              ; dx = 0
-    div word [bpb_bytes_per_sector]         ; ax = (32 * number_of_entries) / bytes_per_sector   dx = (32 * number_of_entries) % bytes_per_sector
-    test dx, dx                             ; if remainder != 0, add 1
-    jz .end_route_directory_calculation
-    inc ax
-.end_route_directory_calculation:
-    ; Actually ead the root directory
-    mov cl, al                              ; Number of sectors to read = size of the root directory
-    pop ax                                  ; LBA of the root directory
-    mov dl, [ebr_drive_number]              ; Drive we just booted from
-    mov bx, buffer                          ; es:bx = address of root directory buffer
-    call disk_read
-
-    ; Search our stage2
-    xor bx, bx                              ; bx = 0 will serve as our entry counter
-    mov di, buffer
-.search_stage2:
-    mov si, stage2_file_name                ; Setup string comparison
-    mov cx, 11                              ; Length of the string
-    push di                                 ; Save the address of the current entry
-    repe cmpsb                              ; String comparison
-    pop di                                  ; Restore the address of the current entry
-    je .found_stage2                        ; If we found the stage2 entry, jump to it
-
-    add di, 32                              ; Otherwise, add 32 to the current entry address to get to next entry
-    inc bx                                  ; Increment the entry count
-    cmp bx, [bpb_root_directory_entries]    ; Compare the current entry count to the total entry count
-    jl .search_stage2                       ; If it's less than, there are more entries to search
-    
-    mov si, msg_stage2_not_found            ; Otherwise we haven't found the stage2
-    jmp bootloader_error
-
-.found_stage2:
-    ; di still has the address to the directory entry
-    mov ax, [di + 26]                       ; Get the stage2's first cluster
-    mov [stage2_cluster], ax
-
-    ; Load the FAT from disk to memory
-    mov ax, [bpb_reserved_sectors]
-    mov bx, buffer
-    mov cl, [bpb_sectors_per_fat]
-    mov dl, [ebr_drive_number]
-    call disk_read
-
-    ; Read the whole stage2 by processing the FAT chain
-    mov bx, STAGE2_LOAD_SEGMENT
-    mov es, bx
-    mov bx, 0
-
-.load_stage2_fat:
-    ; Read next cluster
-    mov ax, [stage2_cluster]
-    add ax, 31                              ; TODO: Unhardcode this value
-    mov cl, 1
-    mov dl, [ebr_drive_number]
-    call disk_read
-
-    add bx, [bpb_bytes_per_sector]          ; TODO: Fix overflow if stage2 size > 64Kb
-
-    ; Calculate location of next cluster
-    mov ax, [stage2_cluster]
-    mov cx, 3
-    mul cx
-    mov cx, 2
-    div cx                                  ; ax = index of entry in FAT, dx = cluster % 2
-
-    mov si, buffer
-    add si, ax
-    mov ax, [ds:si]                         ; Read entry from FAT at index ax
-    
-    or dx, dx
-    jz .even
-
-.odd:
-    shr ax, 4
-.even:
-    and ax, 0x0FFF
-
-.next_cluster:
-    cmp ax, 0xFF8                           ; If next_cluster >= 0xFF8, then it's the end of the file
-    jae .read_stage2_end
-    mov [stage2_cluster], ax
-    jmp .load_stage2_fat
-
-.read_stage2_end:
-    
-    ; Setup everything to jump to the stage2
-    
-    mov dl, [ebr_drive_number]              ; Boot drive number in dl
-    mov ax, 0                               ; Setup segment registers
+    mov ax, 0x7a0
     mov ds, ax
     mov es, ax
+    sti
 
-    jmp STAGE2_LOAD_SEGMENT:0
+    ; Check extensions present
+    mov ah, 0x41
+    mov bx, 0x55AA
+    stc
+    int 0x13
+    jc extensions_not_present
+    cmp bx, 0xAA55
+    jne extensions_not_present
 
-    ; Stage 2 should never return but maybe ?
-    jmp wait_key_and_reboot
+    ; Read drive parameters
+    mov ah, 0x48
+    stc
+    mov si, disk_parameters
+    mov [si], byte 0x1E                 ; Set the length field
+    int 0x13
+    mov si, msg_read_parameters_failed
+    jc bootloader_error
+
+    ; Find bootable partitions
+    mov si, MBR_Entry1.status
+    mov bx, 4
+.find_bootable:
+    dec bx
+    test bx, bx
+    jz .found_no_bootable_partitions
+    mov ax, [ds:si]
+    test ax, 0x80
+    jnz .found_bootable
+    add si, MBR_Entry_Size
+    jmp .find_bootable
+
+.found_bootable:
+    ; Found bootable
+    push si
+    mov si, msg_found_bootable
+    call puts
+    pop si
+
+    ; Move si to the lba address
+    add si, MBR_Entry1.lba_start - MBR_Entry1.status
+
+    ; Get LBA
+    mov eax, [si]
+
+    mov cx, 1
+    ; Load partition boot sector at 0x7c00 as it expects to be
+    xor bx, bx
+    mov ds, bx
+
+    mov bx, 512
+    call extended_read_disk
+
+    ; Let the partition boot loader know it was loaded by Obsidian Boot Loader
+    mov ecx, ASCII_OBSI
+    mov edx, ASCII_DIAN
+
+    ; Jump to partition boot sector
+    jmp 0x0000:0x7c00
+
+.found_no_bootable_partitions:
+    mov si, msg_no_bootable_partitions
+    jmp bootloader_error
+
+extensions_not_present:
+    mov si, msg_extensions_not_present
 
 bootloader_error:
     call puts
 
 wait_key_and_reboot:
     mov ah, 0
-    int 0x16           ; Wait for keypress
-    jmp 0xFFFF:0       ; Jump to beginning of BIOS, should reboot
+    int 0x16                    ; Wait for keypress
+    jmp 0xFFFF:0                ; Jump to beginning of BIOS, should reboot
 
 bootloader_end:
+    cli
     hlt
     jmp $
 
-%include "disk_utils.asm"
 %include "puts.asm"
-
-msg_read_failed:        db "Read from disk failed!", 13, 10, 0
-msg_reset_failed:       db "Reset disk failed !", 13, 10, 0
-msg_stage2_not_found:   db "Stage 2 not found !", 13, 10, 0
-stage2_file_name:       db "STAGE2  BIN"
-
-stage2_cluster:         dw 0
+%include "disk_utils.asm"
 
 %include "stage2_info.asm"
+
+boot_drive:                     db 0
+
+msg_extensions_not_present:     db "ERR: No extensions", 13, 10, 0
+msg_read_failed:                db "ERR: Read", 13, 10, 0
+msg_read_parameters_failed:     db "ERR: Params", 13, 10, 0
+msg_reset_failed:               db "ERR: Reset", 13, 10, 0
+msg_no_bootable_partitions:     db "ERR: No boot partition", 13, 10, 0
+msg_obsi:                       db "Boot from obsi", 13, 10, 0
+msg_found_bootable:             db "Found boot", 13, 10, 0
+
+times 446-($-$$) db 0
+
+MBR_Entry1:
+.status:                        db 0
+.chs_start:                     db 0, 0, 0
+.partition_type:                db 0
+.chs_end:                       db 0, 0, 0
+.lba_start:                     db 0, 0, 0, 0
+.sector_count:                  db 0, 0, 0, 0
+MBR_Entry2:
+.status:                        db 0
+.chs_start:                     db 0, 0, 0
+.partition_type:                db 0
+.chs_end:                       db 0, 0, 0
+.lba_start:                     db 0, 0, 0, 0
+.sector_count:                  db 0, 0, 0, 0
+MBR_Entry3:
+.status:                        db 0
+.chs_start:                     db 0, 0, 0
+.partition_type:                db 0
+.chs_end:                       db 0, 0, 0
+.lba_start:                     db 0, 0, 0, 0
+.sector_count:                  db 0, 0, 0, 0
+MBR_Entry4:
+.status:                        db 0
+.chs_start:                     db 0, 0, 0
+.partition_type:                db 0
+.chs_end:                       db 0, 0, 0
+.lba_start:                     db 0, 0, 0, 0
+.sector_count:                  db 0, 0, 0, 0
+
+MBR_Entry_Size                  equ 16
+ASCII_OBSI                      equ 0x4F627369
+ASCII_DIAN                      equ 0x6469616E
+
 
 times 510-($-$$) db 0
 db 0x55, 0xAA
 
-buffer:
+disk_parameters:
+.size:                          dw 0x1E
+.flags:                         dw 0
+.cylinders:                     dd 0
+.heads:                         dd 0
+.sectors_per_track:             dd 0
+.sector_count:                  dq 0
+.bytes_per_sector:              dw 0
+.edd:                           dd 0
+
+disk_address_paket:
+.size:                          db 0x10
+.unused:                        db 0
+.sectors_read_count:            dw 0
+.offset:                        dw 0
+.segment:                       dw 0
+.lba:                           dq 0
