@@ -4,28 +4,24 @@
 ; Parameters:
 ; ds:si: Address of null terminated string
 puts:
-    push ax
-    push bx
-    push si
+    pusha
 
 .loop:
-    mov al, [ds:si]
-
+    ; Load byte at DS:SI into AL and increment SI
+    lodsb
     ; Check if null character
-    cmp al, 0
+    test al, al
+    ; End if null character
     jz .end
 
     ; Call BIOS function
-    xor bx, bx
     mov ah, 0x0E
+    xor bx, bx
     int 0x10
 
-    ; Increment pointer
-    inc si
+    ; Continue loop
     jmp .loop
 
 .end:
-    pop si
-    pop bx
-    pop ax
+    popa
     ret

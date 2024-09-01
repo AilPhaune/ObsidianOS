@@ -1,27 +1,111 @@
 ORG 0
 BITS 16
 
-kernel_entry:
+    jmp stage2_entry
+    db "Obsidian"
+
+boot_drive:                     db 0
+msg_loaded_by_obsidian:         db "Obsidian Loader.", 13, 10, 0
+msg_not_loaded_by_obsidian:     db "FATAL: Stage 2 wasn't loaded by Obsidian !", 13, 10, 0
+msg_read_failed:                db "FATAL: Read from disk failed !", 13, 10, 0
+msg_reset_failed:               db "FATAL: Disk reset failed !", 13, 10, 0
+msg_wait_key_and_reboot:        db 13, 10, "Press any key to reboot.", 13, 10, 0
+
+%include "../stage1/disk_utils.asm"
+
+disk_address_paket:
+.size:                          db 0x10
+.unused:                        db 0
+.sectors_read_count:            dw 0
+.offset:                        dw 0
+.segment:                       dw 0
+.lba:                           dq 0
+
+remaining_stage2_sectors:       dw 0
+
+stage2_entry:
+    cmp ebx, ASCII_OBSI
+    jne not_loaded_by_obsidian
+    cmp ecx, ASCII_DIAN
+    jne not_loaded_by_obsidian
+
+    ; From OBSIDIAN bootloader: 
+    ; REGISTER STATE:
+    ;   eax = remaining sectors to load before first cluster)
+    ;   ebx = ASCII of "Obsi"
+    ;   ecx = ASCII of "dian"
+    ;    dl = boot drive
     cli
-    mov ax, cs
-    mov ds, ax
-    mov ss, ax
+    mov bx, cs
+    mov ds, bx
+    mov ss, bx
     mov sp, 0
     sti
 
     xor dh, dh
     mov [boot_drive], dl
 
+    ; Limit amount of read sectors to 895
+    ; https://wiki.osdev.org/Memory_Map_(x86) : We can only use memory from 0x8000 to 0x80000,
+    ; and we're currently using 0x10000-0x10200 so usable memory is 0x80000-0x10200 bytes = 895 sectors
+    mov ebx, 895
+    cmp ebx, eax
+    cmovb eax, ebx
+
+    mov [remaining_stage2_sectors], ax
+.read_loop:
+    mov ax, [remaining_stage2_sectors]                  ; Get the remaining amount of sectors
+    test ax, ax                                         ; Check if there are still some sectors to read ?
+    jz .loaded_by_obsidian                              ; No more sectors to read
+    mov cx, 63                                          ; Read 63 sectors (is the maximum for some BIOSes)
+    cmp ax, cx                                          ; Compare ax to cx
+    cmovb cx, ax                                        ; If ax<cx then only read ax sectors
+    mov eax, 2                                          ; Read from sector 2 (the first 512 bytes of this files are loaded by OBSIDIAN stage 1 from sector 1, so the rest is at sector 2)
+    mov bx, 0x1020                                      ; Read at segment 0x1020 (512 bytes after the current one, so just behind in memory)
+    mov es, bx                                          ; Move this value to the segment register used by the read function
+    xor bx, bx                                          ; Set the offset to this segment to 0
+    call extended_read_disk                             ; Read from disk, function only returns if success.
+    mov cx, [disk_address_paket.sectors_read_count]     ; Get the real amount of read sectors
+    sub [remaining_stage2_sectors], cx                  ; Subtract the read amount of sectors from the remaining count
+    shl cx, 5                                           ; Multiply the amount of sectors by 32 to get the number of segments to add (1 segment = 16 bytes offset, 1 disk sector = 512 bytes offset --> 1 disk sector = 512/16=32 segments)
+    add bx, cx
+    jmp .read_loop
+
+.loaded_by_obsidian:
+    push word msg_loaded_by_obsidian
+    call _puts
+    add sp, 2
+
     push word msg_searching_kernel
     call _puts
     add sp, 2
 
     call start_pmode
+    jmp wait_key_and_reboot
+
+not_loaded_by_obsidian:
+    mov si, msg_not_loaded_by_obsidian
+
+bootloader_error:
+    push si
+    call _puts
+    add sp, 2
+
+wait_key_and_reboot:
+    push word msg_wait_key_and_reboot
+    call _puts
+    add sp, 2
+
+    mov ah, 0
+    int 0x16                    ; Wait for keypress
+    jmp 0xFFFF:0                ; Jump to beginning of BIOS, should reboot
 
 kernel_end:
     cli
     hlt
     jmp $
+
+times 512-($-$$) db 0           ; Explicitly throws an error if the above code doesn't fit in 512 bytes
 
 load_gdt:
     [bits 16]
@@ -61,16 +145,51 @@ start_pmode:
     mov ebp, 0x90000
     mov esp, ebp
 
+    mov edi, 0xB8000
+    mov [edi], byte 'H'
+    add edi, 2
+    mov [edi], byte 'e'
+    add edi, 2
+    mov [edi], byte 'l'
+    add edi, 2
+    mov [edi], byte 'l'
+    add edi, 2
+    mov [edi], byte 'o'
+    add edi, 2
+    mov [edi], byte ' '
+    add edi, 2
+    mov [edi], byte 'W'
+    add edi, 2
+    mov [edi], byte 'o'
+    add edi, 2
+    mov [edi], byte 'r'
+    add edi, 2
+    mov [edi], byte 'l'
+    add edi, 2
+    mov [edi], byte 'd'
+    add edi, 2
+    mov [edi], byte ' '
+    add edi, 2
+    mov [edi], byte '!'
+    add edi, 2
+
+    mov eax, 0x1000
+.clear_screen_loop:
+    mov [edi], byte 0
+    inc edi
+    dec eax
+    test eax, eax
+    jnz .clear_screen_loop
+
     hlt
     jmp $
 
 
 %include "stdio.asm"
 
-boot_drive:             db 0
-ENDL:                   db 13, 10, 0
+ENDL:                       db 13, 10, 0
 
-msg_searching_kernel:   db "Searching for kernel.", 13, 10, 0
+msg_searching_kernel:       db "Searching for kernel.", 13, 10, 0
 
 enable_a20:
     [bits 16]

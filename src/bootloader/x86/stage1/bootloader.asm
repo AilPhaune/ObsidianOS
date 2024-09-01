@@ -6,14 +6,12 @@ start:
     ; Setup segment registers
     mov ax, 0x07c0
     mov ds, ax
-    mov es, ax
     mov gs, ax
 
     ; Setup stack
     xor ax, ax
     mov ss, ax
     mov sp, 0x7a00
-    sti
 
     ; Most BIOSes load us into 0x0000:0x7c00, but we need the ORG to be 0, so there won't be problems when we'll relocate to 0x7a00.
     jmp 0x07c0:.bootloader
@@ -21,19 +19,8 @@ start:
 .bootloader:
     mov [boot_drive], dl
 
-    cmp ecx, ASCII_OBSI
-    jne .not_loaded_by_obsidian
-    cmp edx, ASCII_DIAN
-    jne .not_loaded_by_obsidian
-
-.loaded_by_obsidian:
-    mov si, msg_obsi
-    call puts
-    jmp $
-
 .not_loaded_by_obsidian:
     ; Copy bootloader at 0x7a00
-    cli
     mov ax, 0x7a0
     mov fs, ax                          ; Destination segment
     mov si, 0                           ; Source index: 0x07c0:0x0000
@@ -75,6 +62,37 @@ start:
     mov si, msg_read_parameters_failed
     jc bootloader_error
 
+.find_obsidian:
+    ; Load the next sector
+    mov ax, STAGE2_LOAD_SEGMENT
+    mov es, ax
+    xor eax, eax
+    inc eax
+    mov cx, 1
+    xor bx, bx
+    call extended_read_disk
+    ; Check signature
+    mov di, 3
+    mov eax, [es:di]
+    cmp eax, ASCII_OBSI_LE
+    jne .no_obsidian
+    mov di, 7
+    mov eax, [es:di]
+    cmp eax, ASCII_DIAN_LE
+    jne .no_obsidian
+
+.found_obsidian:
+    ; Let the partition boot loader know it was loaded by Obsidian Boot Loader
+    mov ebx, ASCII_OBSI
+    mov ecx, ASCII_DIAN
+    ; Let it also know how much remaining sectors before the first partition
+    mov eax, [MBR_Entry1.lba_start]
+    sub eax, 2
+
+    ; Jump to stage2
+    jmp STAGE2_LOAD_SEGMENT:0
+
+.no_obsidian:
     ; Find bootable partitions
     mov si, MBR_Entry1.status
     mov bx, 4
@@ -110,8 +128,8 @@ start:
     call extended_read_disk
 
     ; Let the partition boot loader know it was loaded by Obsidian Boot Loader
-    mov ecx, ASCII_OBSI
-    mov edx, ASCII_DIAN
+    mov ebx, ASCII_OBSI
+    mov ecx, ASCII_DIAN
 
     ; Jump to partition boot sector
     jmp 0x0000:0x7c00
@@ -127,14 +145,9 @@ bootloader_error:
     call puts
 
 wait_key_and_reboot:
-    mov ah, 0
+    xor ah, ah
     int 0x16                    ; Wait for keypress
     jmp 0xFFFF:0                ; Jump to beginning of BIOS, should reboot
-
-bootloader_end:
-    cli
-    hlt
-    jmp $
 
 %include "puts.asm"
 %include "disk_utils.asm"
@@ -143,13 +156,12 @@ bootloader_end:
 
 boot_drive:                     db 0
 
-msg_extensions_not_present:     db "ERR: No extensions", 13, 10, 0
-msg_read_failed:                db "ERR: Read", 13, 10, 0
-msg_read_parameters_failed:     db "ERR: Params", 13, 10, 0
-msg_reset_failed:               db "ERR: Reset", 13, 10, 0
-msg_no_bootable_partitions:     db "ERR: No boot partition", 13, 10, 0
-msg_obsi:                       db "Boot from obsi", 13, 10, 0
-msg_found_bootable:             db "Found boot", 13, 10, 0
+msg_extensions_not_present:     db "ERR:Extensions", 13, 10, 0
+msg_read_failed:                db "ERR:Read", 13, 10, 0
+msg_read_parameters_failed:     db "ERR:Params", 13, 10, 0
+msg_reset_failed:               db "ERR:Reset", 13, 10, 0
+msg_no_bootable_partitions:     db "ERR:No boot partition", 13, 10, 0
+msg_found_bootable:             db "Booting", 13, 10, 0
 
 times 446-($-$$) db 0
 
@@ -183,12 +195,14 @@ MBR_Entry4:
 .sector_count:                  db 0, 0, 0, 0
 
 MBR_Entry_Size                  equ 16
-ASCII_OBSI                      equ 0x4F627369
-ASCII_DIAN                      equ 0x6469616E
 
 
 times 510-($-$$) db 0
 db 0x55, 0xAA
+
+; Don't put it at 512, because when loading partition boot loader at 0x7c00 (ds:512, because ds=cs=0x07a0),
+; the BIOS writes the result in these data structures, which would overwrite the data that came from disk
+section data vstart=1024
 
 disk_parameters:
 .size:                          dw 0x1E

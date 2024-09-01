@@ -12,7 +12,7 @@ stage1:
 	$(MAKE) -C $(SRC_DIR)/bootloader/x86/stage1 all BUILD_DIR=$(abspath $(BUILD_DIR)) SRC_DIR=$(abspath $(SRC_DIR))
 
 stage2:
-#	$(MAKE) -C $(SRC_DIR)/bootloader/x86/stage2 all BUILD_DIR=$(abspath $(BUILD_DIR)) SRC_DIR=$(abspath $(SRC_DIR))
+	$(MAKE) -C $(SRC_DIR)/bootloader/x86/stage2 all BUILD_DIR=$(abspath $(BUILD_DIR)) SRC_DIR=$(abspath $(SRC_DIR))
 
 stage3:
 #	$(MAKE) -C $(SRC_DIR)/bootloader/x86/stage3 all BUILD_DIR=$(abspath $(BUILD_DIR)) SRC_DIR=$(abspath $(SRC_DIR))

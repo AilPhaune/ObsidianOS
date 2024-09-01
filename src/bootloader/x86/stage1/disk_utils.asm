@@ -46,7 +46,7 @@ extended_read_disk:
 ; dl: Drive number
 disk_reset:
     pusha
-    mov ah, 0
+    xor ah, ah
     stc
     int 0x13
     mov si, msg_reset_failed
