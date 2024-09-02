@@ -120,6 +120,27 @@ impl Video {
         &mut *VIDEO.get()
     }
 
+    pub fn println(string: &[u8], foreground: Color, background: Color) {
+        unsafe {
+            let video = Self::get();
+            let color = video.current_color;
+            video.set_color(foreground, background);
+            video.write_string(string);
+            video.write_char(b'\n');
+            video.current_color = color;
+        }
+    }
+
+    /// # Safety
+    /// This function reads memory from the given pointer until it encounters a null byte. Make absolutely sure your string is null terminated !
+    pub unsafe fn print_c_str(c_str: *const u8, foreground: Color, background: Color) {
+        let video = Self::get();
+        let color = video.current_color;
+        video.set_color(foreground, background);
+        video.write_c_string(c_str);
+        video.current_color = color;
+    }
+
     const fn new() -> Video {
         Video {
             current_x: 0,

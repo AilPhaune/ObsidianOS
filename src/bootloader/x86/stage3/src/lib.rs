@@ -2,17 +2,20 @@
 #![no_main]
 #![feature(sync_unsafe_cell)]
 
+use debug::{get_debug, DebugDriver};
 use interrupts::{
-    i8259::i8259_get_driver,
     initialize_idt,
     irq::{initialize_irq, register_irq_handler},
-    pic::PICDriver,
+    pic::get_pic_driver,
     InterruptData,
 };
+use memory::allocators::hardcoded::HardcodedAddressAllocator;
 use video::{Color, Cursor, Video};
 
 pub mod asm;
+pub mod debug;
 pub mod interrupts;
+pub mod memory;
 pub mod video;
 
 #[macro_export]
@@ -47,6 +50,15 @@ macro_rules! integer_enum_impl {
     };
 }
 
+/// # Safety
+/// It's memset
+#[no_mangle]
+pub unsafe extern "C" fn memset(dest: *mut u8, src: *mut u8, count: usize) {
+    for i in 0..count {
+        *(dest.add(i)) = *(src.add(i));
+    }
+}
+
 extern "cdecl" {
     pub fn stage3_entry();
     pub fn clear_interrupts();
@@ -72,15 +84,27 @@ pub fn kpanic() -> ! {
     loop {}
 }
 
-pub fn on_timer(_data: &mut InterruptData) {
-    unsafe {
-        Video::get().write_char(b'.');
+pub fn unwrap<T>(option: Option<T>, message: &[u8]) -> T {
+    match option {
+        None => {
+            Video::println(b"Unwrapped a None option:", Color::LightRed, Color::Black);
+            Video::println(message, Color::LightRed, Color::Black);
+            kpanic();
+        }
+        Some(t) => t,
     }
 }
 
+pub fn ignore_irq(_: &mut InterruptData) {}
+
+pub fn on_timer(_data: &mut InterruptData) {}
+
 #[no_mangle]
-pub extern "cdecl" fn rust_entry(_disk: u8) -> ! {
+pub extern "cdecl" fn rust_entry(_boot_disk: usize) -> ! {
     unsafe {
+        // 32Mb
+        let allocator = HardcodedAddressAllocator::new(1024 * 1024, 32 * 1024 * 1024);
+
         let video = Video::get();
         video.set_color(Color::White, Color::Black);
         video.clear();
@@ -88,15 +112,19 @@ pub extern "cdecl" fn rust_entry(_disk: u8) -> ! {
         clear_interrupts();
         initialize_idt();
         initialize_irq();
-        enable_interrupts();
+        unwrap(get_pic_driver(), b"PIC Driver unset").set_mask(0xFFFF);
 
         register_irq_handler(0, &on_timer);
-        i8259_get_driver().unmask(0);
+        register_irq_handler(7, &ignore_irq);
+        unwrap(get_pic_driver(), b"PIC Driver unset").unmask(0);
+        enable_interrupts();
 
         Cursor::enable_cursor(0, 15);
         video.write_char(b'\n');
         video.set_color(Color::White, Color::Blue);
         video.write_string(b"Hello world !!\n");
+
+        get_debug().write_chars(b"Stage 3 init\n");
     }
     #[allow(clippy::empty_loop)]
     loop {}

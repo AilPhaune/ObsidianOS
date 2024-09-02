@@ -19,6 +19,7 @@ opt-level = "z"
 [profile.release]
 panic = "abort"
 opt-level = "z"
+overflow-checks = false
 debug = true
 
 [package.metadata.cargo-xbuild.default-target]

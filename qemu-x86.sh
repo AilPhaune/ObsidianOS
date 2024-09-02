@@ -1,1 +1,1 @@
-qemu-system-i386 -hda build/x86.img
+qemu-system-i386 -debugcon stdio -hda build/x86.img
