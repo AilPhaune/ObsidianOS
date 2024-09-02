@@ -80,6 +80,8 @@ stage2_entry:
     call _puts
     add sp, 2
 
+    call gather_data_for_stage3
+
     call start_pmode
     jmp wait_key_and_reboot
 
@@ -106,6 +108,57 @@ kernel_end:
     jmp $
 
 times 512-($-$$) db 0           ; Explicitly throws an error if the above code doesn't fit in 512 bytes
+
+current_partition_data_address:                     dw 0
+
+gather_data_for_stage3:
+    [bits 16]
+    pusha
+
+    ; Read disk boot sector at 0x7c00 (sounds familiar)
+    mov ax, 0x07c0
+    mov es, ax
+
+    mov dl, [boot_drive]
+    xor eax, eax
+    mov cx, 1
+    xor bx, bx
+    call extended_read_disk
+
+    movzx ebx, word [es:510]
+    cmp ebx, 0xAA55
+    jne .done_gathering_partition_data
+
+    mov [current_partition_data_address], word 512
+
+    mov si, 430
+    mov bx, 4
+.read_partition_bootsector_loop:
+    dec bx                                          ; Decrement counter
+    test bx, bx                                     ; Test counter
+    jz .done_gathering_partition_data               ; Jump out if zero
+    add si, 16                                      ; Size of an MBR entry
+
+    movzx eax, byte [es:si]                         ; Get partition status
+    test ax, 0x80                                   ; Test active bit
+    jz .read_partition_bootsector_loop              ; Skip partition
+
+    add si, 8                                       ; Skip to LBA of first sector
+    pusha
+    mov eax, dword [es:si]                          ; Get LBA
+    mov cx, 1                                       ; Read 1 sector
+    mov dl, [boot_drive]                            ; Drive number
+    mov bx, [current_partition_data_address]        ; Address where to put the data
+    call extended_read_disk
+    add bx, 512                                     ; Next address where to read
+    mov [current_partition_data_address], bx        ; Save next address
+    popa
+    sub si, 8
+    jmp .read_partition_bootsector_loop
+
+.done_gathering_partition_data:
+    popa
+    ret
 
 load_gdt:
     [bits 16]
@@ -145,11 +198,11 @@ start_pmode:
     mov ebp, 0x10000
     mov esp, ebp
 
+call_stage3:
     ; Call stage3
-    xor dh, dh
-    ;mov dl, [boot_drive]
-    push dx
-    call 0x2000                     ; We're at 0x10000 so this will call at 0x10000 + 0x2000
+    and edx, 0xFF
+    push edx
+    jmp 0x2000          ; Relative jump
 
     hlt
     jmp $
