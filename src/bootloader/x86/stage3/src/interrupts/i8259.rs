@@ -113,7 +113,7 @@ pub fn i8259_configure(pic1_offset: u8, pic2_offset: u8, auto_eoi: bool) -> bool
             return false;
         }
         video.set_writing_column(-7);
-        video.set_color(Color::Green, Color::Black);
+        video.set_color(Color::LightGreen, Color::Black);
         video.write_string(b"SUCCESS\n");
         driver.set_mask(0xFFFF);
 

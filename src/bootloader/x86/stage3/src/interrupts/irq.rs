@@ -30,6 +30,7 @@ fn irq_handler(data: &mut InterruptData) {
         if let Some(handler) = handlers.get(irq as usize) {
             match handler {
                 IRQHandlerEntry::Absent => {
+                    driver.send_end_of_interrupt(irq);
                     let video = Video::get();
                     video.set_color(Color::LightRed, Color::Black);
                     video.scroll(u16::MAX);
@@ -37,7 +38,6 @@ fn irq_handler(data: &mut InterruptData) {
                     video.write_string(b"Unhandled hardware interrupt: 0x");
                     video.write_hex_u8(irq);
                     video.write_char(b'\n');
-                    driver.send_end_of_interrupt(irq);
                     kpanic();
                 }
                 IRQHandlerEntry::Present(handler) => {

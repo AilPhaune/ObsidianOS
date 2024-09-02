@@ -52,7 +52,7 @@ pub fn initialize_pic() {
         video.set_color(Color::White, Color::Black);
         video.write_string(b"Initializing PIC...\n");
     }
-    if i8259_configure(PIC_REMAP_OFFSET, PIC_REMAP_OFFSET + 8, false) {
+    if i8259_configure(PIC_REMAP_OFFSET, PIC_REMAP_OFFSET + 8, true) {
         set_pic_driver(i8259_get_driver());
     }
 
