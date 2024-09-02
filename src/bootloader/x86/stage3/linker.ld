@@ -1,4 +1,3 @@
-OUTPUT_FORMAT("binary")
 ENTRY(stage3_entry)
 
 SECTIONS

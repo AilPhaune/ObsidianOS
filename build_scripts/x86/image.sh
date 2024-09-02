@@ -19,6 +19,9 @@ sudo dd if=${BUILD_DIR}/x86/bootloader.bin of=${loop_device} bs=446 count=1 conv
 # Stage 2
 sudo dd if=${BUILD_DIR}/x86/bootloader_stage2.bin of=${loop_device} bs=512 seek=1 conv=notrunc
 
+# Stage 3
+sudo dd if=${BUILD_DIR}/x86/bootloader_stage3.bin of=${loop_device} bs=512 seek=17 conv=notrunc
+
 sudo mkfs.fat -F 32 -n "AilPhauneOS" ${loop_device}p1
 
 mkdir partition1

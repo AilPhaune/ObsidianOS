@@ -1,7 +1,7 @@
 [package]
 name = "stage3"
 version = "0.1.0"
-authors = ["Your Name <youremail@example.com>"]
+authors = ["AilPhaune"]
 edition = "2021"
 build = "build.rs"
 
@@ -19,6 +19,7 @@ opt-level = "z"
 [profile.release]
 panic = "abort"
 opt-level = "z"
+debug = true
 
 [package.metadata.cargo-xbuild.default-target]
 i686-unknown-none = true

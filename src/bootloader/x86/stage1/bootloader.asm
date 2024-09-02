@@ -154,7 +154,7 @@ wait_key_and_reboot:
 
 %include "stage2_info.asm"
 
-boot_drive:                     db 0
+boot_drive:                     db 0x69
 
 msg_extensions_not_present:     db "ERR:Extensions", 13, 10, 0
 msg_read_failed:                db "ERR:Read", 13, 10, 0

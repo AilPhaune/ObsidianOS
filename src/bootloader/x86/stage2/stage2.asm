@@ -135,51 +135,21 @@ start_pmode:
     [bits 32]
     ; Protected mode code
 
-    mov ax, GDT_32bit_DATA_SEG
+    mov eax, GDT_32bit_DATA_SEG
     mov ds, ax
     mov ss, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
 
-    mov ebp, 0x90000
+    mov ebp, 0x10000
     mov esp, ebp
 
-    mov edi, 0xB8000
-    mov [edi], byte 'H'
-    add edi, 2
-    mov [edi], byte 'e'
-    add edi, 2
-    mov [edi], byte 'l'
-    add edi, 2
-    mov [edi], byte 'l'
-    add edi, 2
-    mov [edi], byte 'o'
-    add edi, 2
-    mov [edi], byte ' '
-    add edi, 2
-    mov [edi], byte 'W'
-    add edi, 2
-    mov [edi], byte 'o'
-    add edi, 2
-    mov [edi], byte 'r'
-    add edi, 2
-    mov [edi], byte 'l'
-    add edi, 2
-    mov [edi], byte 'd'
-    add edi, 2
-    mov [edi], byte ' '
-    add edi, 2
-    mov [edi], byte '!'
-    add edi, 2
-
-    mov eax, 0x1000
-.clear_screen_loop:
-    mov [edi], byte 0
-    inc edi
-    dec eax
-    test eax, eax
-    jnz .clear_screen_loop
+    ; Call stage3
+    xor dh, dh
+    ;mov dl, [boot_drive]
+    push dx
+    call 0x2000                     ; We're at 0x10000 so this will call at 0x10000 + 0x2000
 
     hlt
     jmp $
@@ -248,31 +218,3 @@ PS2_READ_OUTPUT         equ 0xD0
 PS2_WRITE_OUTPUT        equ 0xD1
 
 %include "../stage1/stage2_info.asm"
-
-;
-; `memcpy`: Copies x bytes of memory from a source pointer into a destination pointer
-;
-; Parameters:
-; fs:di: dest
-; gs:si: source
-; cx: len
-memcpy:
-    ;push bx
-    ;push cx
-    ;push si
-    ;push di
-.loop:
-    test cx, cx
-    jz .end
-    mov bl, [gs:si]
-    mov [fs:di], bl
-    inc si
-    inc di
-    dec cx
-    jmp .loop
-.end:
-    ;pop di
-    ;pop si
-    ;pop cx
-    ;pop bx
-    ret
