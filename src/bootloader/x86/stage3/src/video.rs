@@ -46,8 +46,8 @@ impl Color {
 pub const VGA_WIDTH: usize = 80;
 pub const VGA_HEIGHT: usize = 25;
 pub const VGA_START_ADDRESS: usize = 0xB8000;
-pub const VGA_END_ADDRESS: usize =
-    VGA_START_ADDRESS + size_of::<Character>() * VGA_WIDTH * VGA_HEIGHT;
+pub const VGA_SIZE: usize = VGA_WIDTH * VGA_HEIGHT;
+pub const VGA_END_ADDRESS: usize = VGA_START_ADDRESS + size_of::<Character>() * VGA_SIZE;
 pub struct Cursor {}
 
 impl Cursor {
@@ -133,14 +133,38 @@ impl Video {
     }
 
     /// Doesn't update the cursor
-    pub fn set_writing_position(&mut self, x: u16, y: u16) {
-        self.current_x = x % (VGA_WIDTH as u16);
-        self.current_y = y % (VGA_HEIGHT as u16);
+    pub fn set_writing_position(&mut self, x: i16, y: i16) {
+        self.set_writing_column(x);
+        self.set_writing_row(y);
+    }
+
+    /// Doesn't update the cursor
+    pub fn set_writing_column(&mut self, x: i16) {
+        let x = x % (VGA_WIDTH as i16);
+        self.current_x = ((VGA_WIDTH as i16) + x) as u16;
+    }
+
+    /// Doesn't update the cursor
+    pub fn set_writing_row(&mut self, y: i16) {
+        let y = y % (VGA_HEIGHT as i16);
+        self.current_y = ((VGA_HEIGHT as i16) + y) as u16;
     }
 
     /// Doesn't update the cursor
     pub fn carriage_return(&mut self) {
         self.current_x = 0;
+    }
+
+    pub fn clear(&mut self) {
+        unsafe {
+            for i in 0..(VGA_WIDTH * VGA_HEIGHT) {
+                video_memory![i].character = 0;
+                video_memory![i].color = self.current_color;
+            }
+        }
+        self.current_x = 0;
+        self.current_y = 0;
+        self.update_cursor();
     }
 
     pub fn write_char(&mut self, character: u8) {
@@ -166,7 +190,11 @@ impl Video {
         let remaining_chars = remaining_lines * (VGA_WIDTH as u16);
         unsafe {
             for i in 0..(remaining_chars as usize) {
-                *video_memory![i] = *video_memory![VGA_END_ADDRESS - i - 1];
+                *video_memory![i] = *video_memory![VGA_SIZE - (remaining_chars as usize) + i];
+            }
+            for i in (remaining_chars as usize)..VGA_SIZE {
+                video_memory![i].character = 0;
+                video_memory![i].color = self.current_color;
             }
         }
         self.current_y -= amount;
@@ -188,7 +216,9 @@ impl Video {
         } else {
             if self.current_x == VGA_WIDTH as u16 {
                 self.current_x = 0;
-                self.scroll(1);
+                if self.current_y == (VGA_HEIGHT - 1) as u16 {
+                    self.scroll(1);
+                }
                 self.current_y += 1;
             }
             unsafe {

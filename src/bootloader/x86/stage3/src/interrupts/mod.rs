@@ -1,8 +1,17 @@
-use core::{cell::SyncUnsafeCell, ops::BitOr};
+pub mod i8259;
+pub mod irq;
+pub mod isr;
+pub mod pic;
+
+use core::{
+    cell::SyncUnsafeCell,
+    ops::{BitOr, BitOrAssign},
+};
+
+use isr::initialize_interrupt_serive_routines;
 
 use crate::{
-    isr::initialize_interrupt_serive_routines,
-    kpanic,
+    integer_enum_impl, kpanic,
     video::{Color, Video},
 };
 
@@ -57,46 +66,27 @@ pub enum IDTFlagNumeric {
     Present = 0x80,
 }
 
-impl BitOr<IDTFlagNumeric> for IDTFlagNumeric {
-    type Output = u8;
-    fn bitor(self, rhs: IDTFlagNumeric) -> Self::Output {
-        (self as u8) | (rhs as u8)
-    }
-}
-
-impl BitOr<IDTFlagNumeric> for u8 {
-    type Output = u8;
-    fn bitor(self, rhs: IDTFlagNumeric) -> Self::Output {
-        self | (rhs as u8)
-    }
-}
-
-impl BitOr<u8> for IDTFlagNumeric {
-    type Output = u8;
-    fn bitor(self, rhs: u8) -> Self::Output {
-        (self as u8) | rhs
-    }
-}
+integer_enum_impl!(IDTFlagNumeric, u8);
 
 #[repr(C, packed)]
 pub struct InterruptData {
     // in reverse order they are pushed:
-    ds: u32,
-    edi: u32,
-    esi: u32,
-    ebp: u32,
-    kernel_esp: u32,
-    ebx: u32,
-    edx: u32,
-    ecx: u32,
-    eax: u32,
-    interrupt: u32,
-    error_code: u32,
-    eip: u32,
-    cs: u32,
-    eflags: u32,
-    esp: u32,
-    ss: u32,
+    pub ds: u32,
+    pub edi: u32,
+    pub esi: u32,
+    pub ebp: u32,
+    pub kernel_esp: u32,
+    pub ebx: u32,
+    pub edx: u32,
+    pub ecx: u32,
+    pub eax: u32,
+    pub interrupt: u32,
+    pub error_code: u32,
+    pub eip: u32,
+    pub cs: u32,
+    pub eflags: u32,
+    pub esp: u32,
+    pub ss: u32,
 }
 
 static IDT_ENTRIES: SyncUnsafeCell<[IDTEntry; 256]> = SyncUnsafeCell::new([IDTEntry::zero(); 256]);
@@ -141,23 +131,10 @@ pub fn initialize_idt() {
     }
 }
 
-pub trait InterruptHandler {
-    fn handle(&self, data: *mut InterruptData);
-}
-
-impl<T> InterruptHandler for T
-where
-    T: Fn(*const InterruptData),
-{
-    fn handle(&self, data: *mut InterruptData) {
-        self(data)
-    }
-}
-
 #[derive(Clone, Copy)]
 enum InterruptHandlerEntry {
     Absent,
-    Present(*const dyn InterruptHandler),
+    Present(&'static dyn Fn(&mut InterruptData)),
 }
 
 unsafe impl Sync for InterruptHandlerEntry {}
@@ -183,11 +160,14 @@ pub unsafe extern "cdecl" fn stage3_isr_handler(interrupt_data: *mut InterruptDa
             video.write_char(b'\n');
             kpanic();
         }
-        InterruptHandlerEntry::Present(handler) => (**handler).handle(interrupt_data),
+        InterruptHandlerEntry::Present(handler) => (**handler)(&mut *interrupt_data),
     }
 }
 
-pub fn set_interrupt_handler(interrupt: u8, handler: *const dyn InterruptHandler) {
+pub fn register_interrupt_handler<T>(interrupt: u8, handler: &'static T)
+where
+    T: Fn(&mut InterruptData),
+{
     unsafe {
         let handlers = INTERRUPT_HANDLERS.get();
         (*handlers)[interrupt as usize] = InterruptHandlerEntry::Present(handler);

@@ -15,7 +15,7 @@ fn main() {
         }
     }
 
-    let mut file = File::create("src/isr.rs").unwrap();
+    let mut file = File::create("src/interrupts/isr.rs").unwrap();
     writeln!(
         &mut file,
         "// File generated automatically by build.rs, do not modify.\nuse crate::interrupts::{{set_idt_gate, IDTFlagNumeric}};\n\nextern \"cdecl\" {{"
