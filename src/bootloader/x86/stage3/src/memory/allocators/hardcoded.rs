@@ -11,7 +11,7 @@ pub struct HardcodedAddressAllocator<'a> {
 }
 
 impl<'a> HardcodedAddressAllocator<'a> {
-    pub fn new(begin: usize, size: usize) -> Self {
+    pub const fn new(begin: usize, size: usize) -> Self {
         Self {
             begin,
             size,

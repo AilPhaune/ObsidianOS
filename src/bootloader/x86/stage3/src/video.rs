@@ -153,6 +153,10 @@ impl Video {
         Cursor::update_cursor(self.current_x as usize, self.current_y as usize);
     }
 
+    pub fn current_writing_position(&mut self) -> (u16, u16) {
+        (self.current_x, self.current_y)
+    }
+
     /// Doesn't update the cursor
     pub fn set_writing_position(&mut self, x: i16, y: i16) {
         self.set_writing_column(x);
@@ -162,18 +166,26 @@ impl Video {
     /// Doesn't update the cursor
     pub fn set_writing_column(&mut self, x: i16) {
         let x = x % (VGA_WIDTH as i16);
-        self.current_x = ((VGA_WIDTH as i16) + x) as u16;
+        self.current_x = (((VGA_WIDTH as i16) + x) as u16) % (VGA_WIDTH as u16);
     }
 
     /// Doesn't update the cursor
     pub fn set_writing_row(&mut self, y: i16) {
         let y = y % (VGA_HEIGHT as i16);
-        self.current_y = ((VGA_HEIGHT as i16) + y) as u16;
+        self.current_y = (((VGA_HEIGHT as i16) + y) as u16) % (VGA_HEIGHT as u16);
     }
 
     /// Doesn't update the cursor
     pub fn carriage_return(&mut self) {
         self.current_x = 0;
+    }
+
+    /// Doesn't update the cursor
+    pub fn line_feed(&mut self) {
+        self.current_y += 1;
+        if self.current_y as usize == VGA_HEIGHT {
+            self.scroll(1);
+        }
     }
 
     pub fn clear(&mut self) {
@@ -266,6 +278,37 @@ impl Video {
             self.write_char0(*c);
         }
         self.update_cursor();
+    }
+
+    pub fn write_centered(&mut self, string: &[u8]) {
+        if string.len() > VGA_WIDTH {
+            self.write_string(string);
+            return;
+        }
+        self.current_x = ((VGA_WIDTH - string.len()) >> 1) as u16;
+        for c in string.iter() {
+            self.write_char0(*c);
+        }
+        self.update_cursor();
+    }
+
+    pub fn clear_line(&mut self, line: u16) {
+        unsafe {
+            for i in 0..VGA_WIDTH {
+                video_memory![i + line as usize * VGA_WIDTH].character = 0;
+                video_memory![i + line as usize * VGA_WIDTH].color = self.current_color;
+            }
+        }
+    }
+
+    pub fn clear_current_line(&mut self) {
+        self.clear_line(self.current_y);
+    }
+
+    pub fn write_centered_line(&mut self, string: &[u8]) {
+        self.clear_current_line();
+        self.write_centered(string);
+        self.line_feed();
     }
 
     pub fn write_hex_u8(&mut self, value: u8) {

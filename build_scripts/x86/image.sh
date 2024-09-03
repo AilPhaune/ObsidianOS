@@ -24,7 +24,7 @@ sudo dd if=${BUILD_DIR}/x86/bootloader_stage3.bin of=${loop_device} bs=512 seek=
 
 sudo mkfs.fat -F 32 -n "AilPhauneOS" ${loop_device}p1
 
-mkdir partition1
+mkdir -p partition1
 sudo mount ${loop_device}p1 partition1
 
 echo Hello World > partition1/hello.txt

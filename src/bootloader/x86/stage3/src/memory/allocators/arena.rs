@@ -9,6 +9,8 @@ pub struct ArenaAllocator<'a> {
     dropped: bool,
 }
 
+unsafe impl<'a> Sync for ArenaAllocator<'a> {}
+
 impl<'a> ArenaAllocator<'a> {
     pub fn new<T>(allocator: &'a mut T, size: usize) -> Option<Self>
     where

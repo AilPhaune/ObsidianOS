@@ -5,9 +5,18 @@ use crate::asm::outb;
 pub trait DebugDriver {
     fn write_char(&mut self, character: u8);
     fn write_chars(&mut self, characters: &[u8]);
+    fn write_hex_u8(&mut self, value: u8);
 }
 
-pub struct E9HackDebug {}
+fn get_hex_digit(value: u8) -> u8 {
+    if value >= 10 {
+        b'A' - 10 + value
+    } else {
+        b'0' + value
+    }
+}
+
+pub struct E9HackDebug;
 
 impl DebugDriver for E9HackDebug {
     fn write_char(&mut self, character: u8) {
@@ -23,6 +32,11 @@ impl DebugDriver for E9HackDebug {
             }
         }
     }
+
+    fn write_hex_u8(&mut self, value: u8) {
+        self.write_char(get_hex_digit(value >> 4));
+        self.write_char(get_hex_digit(value & 0xF));
+    }
 }
 
 impl DebugDriver for [&mut dyn DebugDriver] {
@@ -34,6 +48,11 @@ impl DebugDriver for [&mut dyn DebugDriver] {
     fn write_chars(&mut self, characters: &[u8]) {
         for driver in self.iter_mut() {
             driver.write_chars(characters);
+        }
+    }
+    fn write_hex_u8(&mut self, value: u8) {
+        for driver in self.iter_mut() {
+            driver.write_hex_u8(value);
         }
     }
 }

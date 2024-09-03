@@ -3,4 +3,4 @@ label-id: 0x12345678
 device: x86.img
 unit: sectors
 
-x86.img1 : start=        2048, size=       1024, type=83, bootable
+x86.img1 : start=        2048, size=       8192, type=83, bootable
